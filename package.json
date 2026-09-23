@@ -1,0 +1,43 @@
+{
+  "name": "chainart-backend",
+  "version": "1.0.0",
+  "description": "ChainArt NFT Marketplace - Production Backend & Event Indexer",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node src/utils/seedData.js",
+    "test": "node --test test/auth.test.js && node --test test/api.test.js && node --test test/blockchain.test.js && node --test test/integration.test.js"
+  },
+  "keywords": [
+    "nft",
+    "marketplace",
+    "ethereum",
+    "sepolia",
+    "smart-contracts",
+    "web3",
+    "indexer",
+    "express",
+    "mongodb"
+  ],
+  "author": "ChainArt Protocol Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.10.1",
+    "morgan": "^1.10.0",
+    "multer": "^2.4.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}
