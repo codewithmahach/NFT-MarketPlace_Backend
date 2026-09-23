@@ -1,5 +1,11 @@
+import dns from "dns";
 import mongoose from "mongoose";
 import { logger } from "../utils/logger.js";
+
+// Ensure DNS SRV resolution succeeds on Windows/Node.js for mongodb+srv://
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
+} catch (_) {}
 
 let isConnected = false;
 
@@ -8,12 +14,12 @@ export const connectDB = async () => {
 
   try {
     const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
       autoIndex: true,
     });
 
     isConnected = true;
-    logger.info(`✅ MongoDB Connected: ${conn.connection.host}:${conn.connection.port}/${conn.connection.name}`);
+    logger.info(`✅ MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
 
     mongoose.connection.on("error", (err) => {
       logger.error(`MongoDB connection error: ${err.message}`);
