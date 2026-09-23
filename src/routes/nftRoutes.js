@@ -10,6 +10,7 @@ import {
   registerMintedNFT,
   uploadNFTImage,
   syncNFTSupply,
+  getNFTMetadata,
 } from "../controllers/nftController.js";
 import { optionalAuth, authenticateJWT } from "../middleware/auth.js";
 
@@ -37,6 +38,8 @@ router.post("/upload-image", optionalAuth, upload.single("image"), uploadNFTImag
 router.post("/generate-metadata", optionalAuth, generateMetadata);
 router.post("/sync-minted", optionalAuth, registerMintedNFT);
 router.post("/sync-supply", optionalAuth, syncNFTSupply);
+router.get("/:tokenId/metadata", getNFTMetadata);
+router.get("/:tokenId/token-uri.json", getNFTMetadata);
 router.get("/:tokenId", optionalAuth, getNFTById);
 
 export default router;

@@ -9,6 +9,7 @@ import fs from "fs";
 import routes from "./routes/index.js";
 import { generalLimiter } from "./middleware/rateLimiter.js";
 import { notFoundHandler, globalErrorHandler } from "./middleware/errorHandler.js";
+import { UploadedImage } from "./models/UploadedImage.js";
 
 dotenv.config();
 
@@ -60,8 +61,27 @@ if (process.env.NODE_ENV !== "test") {
 // Global Rate Limiter
 app.use(generalLimiter);
 
-// Serve Uploaded Files Statically
+// Serve Uploaded Files Statically with Persistent MongoDB Atlas Fallback (for Ephemeral Cloud Disks like Render)
 app.use("/uploads", express.static(uploadsDir));
+app.get("/uploads/:filename", async (req, res, next) => {
+  const filePath = path.join(uploadsDir, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  try {
+    const cached = await UploadedImage.findOne({ filename: req.params.filename }).lean();
+    if (cached && cached.base64Data) {
+      const buffer = Buffer.from(cached.base64Data, "base64");
+      try {
+        fs.writeFileSync(filePath, buffer);
+      } catch (_) {}
+      res.setHeader("Content-Type", cached.mimetype || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.send(buffer);
+    }
+  } catch (_) {}
+  return res.status(404).json({ success: false, message: "Image not found." });
+});
 
 // Mount API Routes
 app.use("/api", routes);

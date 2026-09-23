@@ -58,6 +58,14 @@ const NFTSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    imageData: {
+      type: String,
+      default: "",
+    },
+    metadataJSON: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     animationUrl: {
       type: String,
       default: "",

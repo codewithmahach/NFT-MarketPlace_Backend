@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { NFT } from "../models/NFT.js";
+import { UploadedImage } from "../models/UploadedImage.js";
 import { Listing } from "../models/Listing.js";
 import { Auction } from "../models/Auction.js";
 import { Order } from "../models/Order.js";
@@ -17,6 +18,21 @@ const uploadsDir = path.join(__dirname, "../../public/uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+
+export const getBackendBaseUrl = (req) => {
+  if (process.env.BACKEND_PUBLIC_URL && process.env.BACKEND_PUBLIC_URL.trim() !== "") {
+    return process.env.BACKEND_PUBLIC_URL.trim().replace(/\/+$/, "");
+  }
+  if (req) {
+    const host = req.get("host");
+    const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    if (host && !host.includes("localhost") && !host.includes("127.0.0.1")) {
+      return `${protocol}://${host}`;
+    }
+  }
+  const port = process.env.PORT || 5000;
+  return `http://localhost:${port}`;
+};
 
 /**
  * Get All NFTs with Filters & Search
@@ -374,7 +390,7 @@ export const registerMintedNFT = async (req, res, next) => {
 };
 
 /**
- * Upload Image File to Pinata IPFS
+ * Upload Image File to Pinata IPFS & Persist to MongoDB Atlas
  * POST /api/nfts/upload-image
  */
 export const uploadNFTImage = async (req, res, next) => {
@@ -392,21 +408,96 @@ export const uploadNFTImage = async (req, res, next) => {
     const filePath = path.join(uploadsDir, safeFileName);
     fs.writeFileSync(filePath, buffer);
 
-    const port = process.env.PORT || 5000;
-    const localFullUrl = `http://localhost:${port}/uploads/${safeFileName}`;
+    const base64Data = buffer.toString("base64");
+    const dataUri = `data:${mimetype || "image/jpeg"};base64,${base64Data}`;
 
     // 2. Upload to Pinata IPFS (or generate cryptographic IPFS CID)
     const uploadResult = await uploadFileToPinata(buffer, originalname, mimetype, customName);
 
-    const gatewayUrl = uploadResult.isPinata ? uploadResult.gatewayUrl : localFullUrl;
+    // 3. PERSIST IN MONGODB ATLAS (So restarts on Render never lose this image!)
+    await UploadedImage.findOneAndUpdate(
+      { filename: safeFileName },
+      {
+        filename: safeFileName,
+        mimetype: mimetype || "image/jpeg",
+        base64Data,
+        size: buffer.length,
+        ipfsHash: uploadResult.ipfsHash || "",
+        uploader: (req.user ? req.user.address : "").toLowerCase(),
+      },
+      { upsert: true, new: true }
+    );
 
-    return successResponse(res, "Image uploaded and stored successfully.", {
+    const baseUrl = getBackendBaseUrl(req);
+    const publicImageUrl = `${baseUrl}/uploads/${safeFileName}`;
+    const gatewayUrl = uploadResult.isPinata ? uploadResult.gatewayUrl : publicImageUrl;
+
+    return successResponse(res, "Image uploaded and stored permanently.", {
       ipfsUri: uploadResult.ipfsUri,
       ipfsHash: uploadResult.ipfsHash,
       gatewayUrl: gatewayUrl,
-      localUrl: localFullUrl,
+      localUrl: publicImageUrl,
+      dataUri: dataUri,
+      filename: safeFileName,
       isPinata: uploadResult.isPinata,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get Standard ERC-1155 OpenSea/MetaMask Metadata JSON
+ * GET /api/nfts/:tokenId/metadata
+ * GET /api/nfts/:tokenId/token-uri.json
+ */
+export const getNFTMetadata = async (req, res, next) => {
+  try {
+    const tokenId = parseInt(req.params.tokenId, 10);
+    if (isNaN(tokenId)) {
+      return res.status(400).json({ error: "Invalid tokenId" });
+    }
+
+    const nft = await NFT.findOne({ tokenId }).lean();
+    if (!nft) {
+      return res.status(404).json({ error: `NFT #${tokenId} not found` });
+    }
+
+    const baseUrl = getBackendBaseUrl(req);
+    let resolvedImage = nft.image;
+    if (resolvedImage && resolvedImage.startsWith("/uploads/")) {
+      resolvedImage = `${baseUrl}${resolvedImage}`;
+    } else if (resolvedImage && (resolvedImage.includes("localhost:5000") || resolvedImage.includes("localhost:10000"))) {
+      resolvedImage = resolvedImage.replace(/http:\/\/localhost:\d+/, baseUrl);
+    }
+
+    const metadata = {
+      name: nft.title || `Luxury Asset #${nft.tokenId}`,
+      description: nft.description || `Verified luxury ${nft.category} asset tokenized on ChainArt with on-chain provenance.`,
+      image: resolvedImage,
+      external_url: `https://chainart.luxury/nft/${nft.tokenId}`,
+      category: nft.category,
+      properties: {
+        category: nft.category,
+        creator: nft.creator,
+        initialSupply: nft.initialSupply || 10,
+        maxSupply: nft.maxSupply || 10,
+        royaltyFeeBps: nft.royaltyFeeBps || 500,
+        contractAddress: nft.contractAddress,
+      },
+      attributes: (nft.attributes && nft.attributes.length > 0)
+        ? nft.attributes
+        : [
+            { trait_type: "Category", value: nft.category },
+            { trait_type: "Brand / Creator", value: nft.brand || "Verified Brand Dealer" },
+            { trait_type: "Total Supply", value: `${nft.totalSupply || 10} Editions` },
+            { trait_type: "Standard", value: "ERC-1155 Verified" },
+          ],
+    };
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    return res.json(metadata);
   } catch (error) {
     next(error);
   }
